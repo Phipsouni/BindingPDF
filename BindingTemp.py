@@ -4,10 +4,10 @@ from PyPDF2 import PdfMerger
 
 # Папка с PDF-файлами
 temp_folder = os.path.join(os.getcwd(), "Temp")  # Путь к папке Temp
-bound_folder = os.path.join(os.getcwd(), "Bound")  # Путь к папке Bound
+combined_folder = os.path.join(os.getcwd(), "Combined")  # Путь к папке Combined
 
-# Создаём папку Bound, если её нет
-os.makedirs(bound_folder, exist_ok=True)
+# Создаём папку Combined, если её нет
+os.makedirs(combined_folder, exist_ok=True)
 
 # Регулярное выражение для извлечения числа перед запятой
 number_pattern = re.compile(r"^(\d+),")
@@ -37,15 +37,15 @@ for pdf in sorted_pdfs:
     print(f"Добавлен: {pdf}")
 
 # --- Определяем имя выходного файла ---
-existing_files = [f for f in os.listdir(bound_folder) if f.startswith("Bound") and f.endswith(".pdf")]
-bound_number_pattern = re.compile(r"Bound-(\d+)\.pdf")
+existing_files = [f for f in os.listdir(combined_folder) if f.startswith("Combined") and f.endswith(".pdf")]
+combined_number_pattern = re.compile(r"Combined-(\d+)\.pdf")
 
 # Находим максимальный существующий номер
-existing_numbers = [int(bound_number_pattern.search(f).group(1)) for f in existing_files if bound_number_pattern.search(f)]
+existing_numbers = [int(combined_number_pattern.search(f).group(1)) for f in existing_files if combined_number_pattern.search(f)]
 next_number = max(existing_numbers, default=0) + 1
 
 # Итоговое имя файла
-output_pdf = os.path.join(bound_folder, f"Bound-{next_number}.pdf")
+output_pdf = os.path.join(combined_folder, f"Combined-{next_number}.pdf")
 
 # Сохраняем объединённый PDF
 merger.write(output_pdf)
