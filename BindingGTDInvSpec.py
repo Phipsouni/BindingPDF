@@ -1,6 +1,6 @@
 import os
 import re
-from PyPDF2 import PdfMerger
+from PyPDF2 import PdfMerder
 
 
 # --- Функция для извлечения номера из имени файла GTD ---
@@ -174,7 +174,8 @@ def main():
 
     # Сортируем ключи (номера GTD) и формируем итоговый список файлов для объединения
     files_to_merge = []
-    processed_folder_numbers = []  # Для формирования имени итогового файла
+    # processed_folder_numbers = [] # Это больше не нужно, так как мы используем set_of_processed_folder_numbers
+    set_of_processed_folder_numbers = set() # Используем set для автоматического удаления дубликатов
 
     # Сортируем пары по номеру GTD
     sorted_gtd_numbers = sorted(paired_documents.keys())
@@ -183,8 +184,9 @@ def main():
         pair = paired_documents[gtd_num]
         if pair['gtd']:
             files_to_merge.append(pair['gtd'])
-            processed_folder_numbers.append(
-                get_folder_number_from_path(pair['gtd']))  # Извлекаем номер папки из пути GTD-файла
+            folder_num = get_folder_number_from_path(pair['gtd'])
+            if folder_num != float('inf'):
+                set_of_processed_folder_numbers.add(folder_num) # Добавляем номер папки в set
 
         if pair['invoice']:
             files_to_merge.append(pair['invoice'])
@@ -196,19 +198,21 @@ def main():
         return
 
     # Формирование диапазона номеров обработанных папок для имени файла
-    processed_folder_numbers = sorted(list(set(processed_folder_numbers)))  # Удаляем дубликаты и сортируем
+    # Преобразуем set в отсортированный список
+    processed_folder_numbers_list = sorted(list(set_of_processed_folder_numbers))
+    
     range_parts = []
-    if processed_folder_numbers:
-        current_range = [processed_folder_numbers[0]]
-        for i in range(1, len(processed_folder_numbers)):
-            if processed_folder_numbers[i] == processed_folder_numbers[i - 1] + 1:
-                current_range.append(processed_folder_numbers[i])
+    if processed_folder_numbers_list:
+        current_range = [processed_folder_numbers_list[0]]
+        for i in range(1, len(processed_folder_numbers_list)):
+            if processed_folder_numbers_list[i] == processed_folder_numbers_list[i - 1] + 1:
+                current_range.append(processed_folder_numbers_list[i])
             else:
                 if len(current_range) > 1:
                     range_parts.append(f"{current_range[0]}-{current_range[-1]}")
                 else:
                     range_parts.append(str(current_range[0]))
-                current_range = [processed_folder_numbers[i]]
+                current_range = [processed_folder_numbers_list[i]]
 
         if len(current_range) > 1:
             range_parts.append(f"{current_range[0]}-{current_range[-1]}")
@@ -218,7 +222,8 @@ def main():
     condensed_range_str = ';'.join(range_parts) if range_parts else "NoRange"
 
     # Создание имени выходного файла
-    output_file_name = f"GTD+Invoice {condensed_range_str} {len(files_to_merge)} pcs.pdf"
+    # *** ИСПРАВЛЕНИЕ ЗДЕСЬ: Используем len(processed_folder_numbers_list) ***
+    output_file_name = f"GTD+Invoice {condensed_range_str} {len(processed_folder_numbers_list)} pcs.pdf"
     output_file_path = os.path.join(save_path, output_file_name)
 
     # Объединение PDF-файлов
@@ -236,7 +241,6 @@ def main():
             print(f"!!! Текст ошибки: {e}")
             print("!!! Этот файл будет пропущен. Возможно, он поврежден или заблокирован.")
             print("=" * 50 + "\n")
-            # Можно добавить этот файл в список пропущенных, если нужно
             continue
 
     print("\nВсе файлы успешно добавлены в объект. Пытаюсь сохранить на диск...")
@@ -246,7 +250,8 @@ def main():
 
         merger.close()
 
-        print(f"\nНайдено и объединено {len(files_to_merge)} файлов.")
+        # Также меняем вывод здесь, чтобы он соответствовал имени файла
+        print(f"\nОбъединено {len(files_to_merge)} файлов из {len(processed_folder_numbers_list)} папок.")
         print(f"Объединённый файл сохранён как: {output_file_name}")
 
     except Exception as e:
