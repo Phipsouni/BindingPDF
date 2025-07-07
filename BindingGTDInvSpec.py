@@ -1,6 +1,6 @@
 import os
 import re
-from PyPDF2 import PdfMerder
+from PyPDF2 import PdfMerger
 
 
 # --- Функция для извлечения номера из имени файла GTD ---
@@ -174,7 +174,6 @@ def main():
 
     # Сортируем ключи (номера GTD) и формируем итоговый список файлов для объединения
     files_to_merge = []
-    # processed_folder_numbers = [] # Это больше не нужно, так как мы используем set_of_processed_folder_numbers
     set_of_processed_folder_numbers = set() # Используем set для автоматического удаления дубликатов
 
     # Сортируем пары по номеру GTD
@@ -222,8 +221,8 @@ def main():
     condensed_range_str = ';'.join(range_parts) if range_parts else "NoRange"
 
     # Создание имени выходного файла
-    # *** ИСПРАВЛЕНИЕ ЗДЕСЬ: Используем len(processed_folder_numbers_list) ***
-    output_file_name = f"GTD+Invoice {condensed_range_str} {len(processed_folder_numbers_list)} pcs.pdf"
+    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ: Добавляем точку в конце "pcs." ---
+    output_file_name = f"GTD+Invoice {condensed_range_str} {len(processed_folder_numbers_list)} pcs..pdf"
     output_file_path = os.path.join(save_path, output_file_name)
 
     # Объединение PDF-файлов
@@ -250,7 +249,7 @@ def main():
 
         merger.close()
 
-        # Также меняем вывод здесь, чтобы он соответствовал имени файла
+        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ: Меняем вывод в консоль для отображения количества папок ---
         print(f"\nОбъединено {len(files_to_merge)} файлов из {len(processed_folder_numbers_list)} папок.")
         print(f"Объединённый файл сохранён как: {output_file_name}")
 
