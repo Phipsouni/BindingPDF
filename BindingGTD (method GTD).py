@@ -13,10 +13,16 @@ def get_document_number(file_path):
         # Получаем только имя файла из полного пути
         file_name = os.path.basename(file_path)
         # Убираем расширение .pdf и разделяем по '_'
-        parts = file_name[:-4].split('_')
-        # Последняя часть и будет номером документа
-        return int(parts[-1])
-    except (IndexError, ValueError):
+        # Используем re.split для обработки случаев, когда номер может быть в конце без подчеркивания,
+        # хотя в примере "GTD_10228010_290625_5196376.pdf" это не так
+        parts = re.split(r'[_-]', file_name.replace('.pdf', ''))
+        
+        # Находим последний числовой элемент
+        for part in reversed(parts):
+            if part.isdigit():
+                return int(part)
+        return float('inf') # Если число не найдено, отправить его в конец списка
+    except Exception:
         # Если формат имени файла неверный, отправляем его в конец списка
         return float('inf')
 
@@ -39,7 +45,7 @@ def parse_folder_range(range_str):
             folder_numbers.update(range(start, end + 1))
         else:
             folder_numbers.add(int(r))
-    return sorted(folder_numbers)
+    return sorted(list(folder_numbers)) # Преобразуем в список для сортировки
 
 
 valid_folders = parse_folder_range(folder_range)
@@ -88,7 +94,6 @@ for folder_name in sorted_folders:
             # Если в папке нашлись GTD-файлы, добавляем их в общий список
             if gtd_files_in_folder:
                 processed_folders.append(folder_number)
-                # --- ИЗМЕНЕНИЕ: Добавляем все найденные файлы, а не один ---
                 all_pdfs.extend(gtd_files_in_folder)
             else:
                 print(f"Пропущена папка {folder_name} (нет файлов GTD_).")
@@ -97,7 +102,7 @@ for folder_name in sorted_folders:
 # Эта сортировка выполняется после того, как все файлы из всех папок собраны
 all_pdfs.sort(key=get_document_number)
 
-# Формирование диапазона номеров обработанных папок (эта часть без изменений)
+# Формирование диапазона номеров обработанных папок
 processed_folders.sort()
 range_parts = []
 if processed_folders:
@@ -105,7 +110,7 @@ if processed_folders:
     for i in range(1, len(processed_folders)):
         if processed_folders[i] == processed_folders[i - 1] + 1:
             if len(current_range) > 1:
-                current_range.pop()
+                current_range.pop() # Удаляем предыдущий элемент, так как он часть диапазона
             current_range.append(processed_folders[i])
         else:
             if len(current_range) > 1:
@@ -119,26 +124,52 @@ if processed_folders:
     else:
         range_parts.append(str(current_range[0]))
 
-# Используем set для получения уникальных номеров папок для имени файла
-unique_processed_folders = sorted(list(set(processed_folders)))
-range_str = ';'.join(map(str, unique_processed_folders))  # Простое перечисление обработанных папок
+# Используем уже созданный список с диапазонами 'range_parts'
+condensed_range_str = ';'.join(range_parts)
 
 # Создание имени выходного файла
-# Теперь len(all_pdfs) будет отражать общее число файлов, а не папок
-output_file_name = f"GTD {range_str} {len(all_pdfs)} pcs..pdf"
-output_file_path = os.path.join(save_path, output_file_name)
+output_file_name = f"GTD {condensed_range_str} {len(all_pdfs)} pcs.pdf"
+output_file_path = os.path.join(save_path, output_file_name) # *** ИСПРАВЛЕНИЕ: Определяем полный путь ***
 
 # Объединение PDF-файлов
 if all_pdfs:
     merger = PdfMerger()
-    for pdf in all_pdfs:
-        merger.append(pdf)
+    print("Начинаю объединение файлов...")
 
-    # Сохранение объединенного PDF
-    merger.write(output_file_path)
-    merger.close()
+    # Этот цикл попытается добавить все файлы и сообщит, если какой-то вызовет ошибку сразу
+    for pdf_path in all_pdfs:
+        print(f"-> Добавляю в очередь: {os.path.basename(pdf_path)}")
+        try:
+            # Открываем файл в бинарном режиме для большей надежности
+            with open(pdf_path, 'rb') as f:
+                merger.append(f)
+        except Exception as e:
+            print("\n" + "="*50)
+            print(f"!!! КРИТИЧЕСКАЯ ОШИБКА ПРИ ДОБАВЛЕНИИ ФАЙЛА:")
+            print(f"!!! Файл: {pdf_path}")
+            print(f"!!! Текст ошибки: {e}")
+            print("="*50 + "\n")
+            # Если нужно, можно раскомментировать, чтобы пропустить битый файл
+            # continue  
 
-    print(f"Найдено и объединено {len(all_pdfs)} файлов.")
-    print(f"Объединённый файл сохранён как: {output_file_name}")
+    # Если все файлы добавились без ошибок, пытаемся сохранить
+    print("\nВсе файлы успешно добавлены в объект. Пытаюсь сохранить на диск...")
+    try:
+        # Сохранение объединенного PDF
+        with open(output_file_path, 'wb') as f_out:
+            merger.write(f_out)
+            
+        merger.close()
+
+        print(f"\nНайдено и объединено {len(all_pdfs)} файлов.")
+        print(f"Объединённый файл сохранён как: {output_file_name}")
+
+    except Exception as e:
+        print("\n" + "="*50)
+        print(f"!!! ОШИБКА НА ЭТАПЕ ЗАПИСИ ФАЙЛА!")
+        print(f"!!! Это означает, что проблема в одном из ранее добавленных файлов или с правами доступа к папке.")
+        print(f"!!! Текст ошибки: {e}")
+        print("="*50 + "\n")
+
 else:
     print("Не найдено GTD-файлов для объединения в указанном диапазоне папок.")
