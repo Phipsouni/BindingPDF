@@ -172,7 +172,7 @@ if __name__ == "__main__":
     condensed_range_str = ';'.join(range_parts) if range_parts else "NoRange"
 
     # Создание имени выходного файла
-    output_file_name = f"Invoice {condensed_range_str} {len(all_invoice_pdfs)} pcs..pdf"
+    output_file_name = f"Inv. + Spec. {condensed_range_str} {len(all_invoice_pdfs)} pcs..pdf"
     output_file_path = os.path.join(save_path, output_file_name)
 
     # Объединение PDF-файлов
