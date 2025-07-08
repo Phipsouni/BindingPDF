@@ -222,7 +222,7 @@ def main():
 
     # Создание имени выходного файла
     # --- ИСПРАВЛЕНИЕ ЗДЕСЬ: Добавляем точку в конце "pcs." ---
-    output_file_name = f"GTD+Invoice {condensed_range_str} {len(processed_folder_numbers_list)} pcs..pdf"
+    output_file_name = f"GTD+Inv. + Spec. {condensed_range_str} {len(processed_folder_numbers_list)} pcs..pdf"
     output_file_path = os.path.join(save_path, output_file_name)
 
     # Объединение PDF-файлов
