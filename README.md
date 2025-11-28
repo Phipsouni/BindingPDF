@@ -14,5 +14,5 @@
 Выходной файл автоматически получает имя, содержащее диапазон обработанных номеров и количество документов.
 
 
-https://github.com/user-attachments/assets/45aa017b-af8b-4e3d-8f94-38e85b93fa1f
+https://github.com/user-attachments/assets/fd7c6254-01b1-4b75-8458-247b712c0265
 
