@@ -347,7 +347,7 @@ def process_temp_folder():
 def main():
     while True:
         print("\n" + "=" * 40)
-        print("   МАСТЕР СКРЕПЛЕНИЯ ДОКУМЕНТОВ")
+        print("   УТИЛИТА СКРЕПЛЕНИЯ ДОКУМЕНТОВ")
         print("=" * 40)
         print("Выберите документы для скрепления:")
         print("1. Отгрузочные документы (GTD, Invoice, ESD)")
