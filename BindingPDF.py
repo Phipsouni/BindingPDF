@@ -1,24 +1,47 @@
 import os
 import re
 import sys
+import time
 from PyPDF2 import PdfMerger
+
+# ==========================================
+# КОНСТАНТЫ ОФОРМЛЕНИЯ
+# ==========================================
+# ANSI коды для форматирования текста в консоли
+BOLD = "\033[1m"
+RESET = "\033[0m"
 
 
 # ==========================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (Утилиты)
 # ==========================================
 
-def get_clean_path(prompt_text):
-    """Запрашивает путь у пользователя и удаляет кавычки, если они есть."""
-    path = input(f"{prompt_text}: ").strip()
-    # Удаляем кавычки в начале и конце, если они есть
+def print_error(message):
+    """Вывод ошибки с красным восклицательным знаком."""
+    print(f"❗️ {message}")
+
+
+def get_clean_path(prompt_text, allow_menu_codes=False):
+    """
+    Запрашивает путь.
+    Текст запроса (prompt_text) делается жирным.
+    """
+    # Делаем текст запроса жирным
+    full_prompt = f"{BOLD}{prompt_text}:{RESET} "
+    path = input(full_prompt).strip()
+
+    # Если введен код меню и он разрешен, возвращаем его сразу
+    if allow_menu_codes and path in ['0', '1']:
+        return path
+
+    # Удаляем кавычки
     if (path.startswith('"') and path.endswith('"')) or (path.startswith("'") and path.endswith("'")):
         path = path[1:-1]
     return path
 
 
 def parse_folder_range(range_str):
-    """Парсит строку диапазона (например, '3550-3553,3560') в список чисел."""
+    """Парсит строку диапазона (например, '3550-3553,3560')."""
     ranges = range_str.split(',')
     folder_numbers = set()
     for r in ranges:
@@ -26,29 +49,30 @@ def parse_folder_range(range_str):
         if not r: continue
         if '-' in r:
             try:
-                start, end = map(int, r.split('-'))
+                parts = r.split('-')
+                start, end = int(parts[0]), int(parts[1])
                 if start > end:
-                    print(f"Предупреждение: Неверный диапазон '{r}'.")
+                    print_error(f"Неверный диапазон '{r}'.")
                     continue
                 folder_numbers.update(range(start, end + 1))
             except ValueError:
-                print(f"Предупреждение: Неверный формат диапазона '{r}'.")
+                print_error(f"Неверный формат диапазона '{r}'.")
         else:
             try:
                 folder_numbers.add(int(r))
             except ValueError:
-                print(f"Предупреждение: Неверный формат числа '{r}'.")
+                print_error(f"Неверный формат числа '{r}'.")
     return sorted(list(folder_numbers))
 
 
-def get_folder_number(folder_name):
-    """Извлекает номер папки для сортировки."""
-    match = re.match(r'^\d+', folder_name)
+def get_number_from_string(text):
+    """Извлекает первое число из строки для сортировки."""
+    match = re.search(r'\d+', text)
     return int(match.group()) if match else float('inf')
 
 
 def generate_range_string(processed_numbers):
-    """Генерирует красивую строку диапазона (3550-3552;3560) для имени файла."""
+    """Генерирует строку диапазона (3550-3552;3560)."""
     if not processed_numbers:
         return "NoRange"
 
@@ -81,21 +105,20 @@ def save_merged_pdf(merger, save_path, file_name):
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
-        print("\nСохранение файла на диск...")
+        print(f"Сохранение: {file_name} ...")
         with open(full_path, 'wb') as f_out:
             merger.write(f_out)
         merger.close()
-        print(f"✅ Успешно! Файл сохранён: {file_name}")
-        print(f"📂 Путь: {save_path}")
+        print(f"✅ Готово!")
     except Exception as e:
-        print(f"❌ Ошибка при сохранении: {e}")
+        print_error(f"Ошибка при сохранении: {e}")
 
 
 # ==========================================
 # ЛОГИКА 1: BindingInvSpec (Инвойсы и Спецификации)
 # ==========================================
 def process_inv_spec(source_path, save_path, valid_folders):
-    print("\n--- Запуск: Инвойсы и Спецификации ---")
+    print("\n[Выполняется: Инвойсы и Спецификации]")
 
     def get_invoice_num(fname):
         match = re.search(r'Invoice (\d+)', fname, re.IGNORECASE)
@@ -104,13 +127,13 @@ def process_inv_spec(source_path, save_path, valid_folders):
     all_invoice_pdfs = []
     processed_folders = []
 
-    all_folders = sorted(os.listdir(source_path), key=get_folder_number)
+    all_folders = sorted(os.listdir(source_path), key=get_number_from_string)
 
     for folder_name in all_folders:
         folder_path = os.path.join(source_path, folder_name)
         if not os.path.isdir(folder_path): continue
 
-        f_num = get_folder_number(folder_name)
+        f_num = get_number_from_string(folder_name)
         if f_num in valid_folders:
             found_in_folder = False
             for file_name in os.listdir(folder_path):
@@ -120,10 +143,9 @@ def process_inv_spec(source_path, save_path, valid_folders):
 
             if found_in_folder:
                 processed_folders.append(f_num)
-                print(f"Обработана папка: {folder_name}")
 
     if not all_invoice_pdfs:
-        print("Файлы Invoice не найдены.")
+        print_error("Файлы Invoice не найдены.")
         return
 
     # Сортировка по номеру инвойса
@@ -137,7 +159,7 @@ def process_inv_spec(source_path, save_path, valid_folders):
         try:
             merger.append(pdf)
         except Exception as e:
-            print(f"Ошибка добавления {pdf}: {e}")
+            print_error(f"Ошибка с файлом {pdf}: {e}")
 
     save_merged_pdf(merger, save_path, output_name)
 
@@ -146,39 +168,37 @@ def process_inv_spec(source_path, save_path, valid_folders):
 # ЛОГИКА 2: BindingGTDESD (Декларации и ЭСД)
 # ==========================================
 def process_gtd_esd(source_path, save_path, valid_folders):
-    print("\n--- Запуск: Декларации и ЭСД ---")
+    print("\n[Выполняется: Декларации и ЭСД]")
     processed_folders = []
     all_pdfs = []
 
-    all_folders = sorted(os.listdir(source_path), key=get_folder_number)
+    all_folders = sorted(os.listdir(source_path), key=get_number_from_string)
 
     for folder_name in all_folders:
         folder_path = os.path.join(source_path, folder_name)
         if not os.path.isdir(folder_path): continue
 
-        f_num = get_folder_number(folder_name)
+        f_num = get_number_from_string(folder_name)
         if f_num in valid_folders:
             gtd_files = []
             esd_files = []
 
             for file_name in os.listdir(folder_path):
                 if not file_name.lower().endswith(".pdf"): continue
-
                 if file_name.startswith("GTD_"):
                     gtd_files.append(os.path.join(folder_path, file_name))
-                elif file_name.count('-') == 4:  # Признак ЭСД
+                elif file_name.count('-') == 4:
                     esd_files.append(os.path.join(folder_path, file_name))
 
             if gtd_files and esd_files:
                 processed_folders.append(f_num)
-                all_pdfs.extend(sorted(gtd_files)[:1])  # Берем первый GTD
-                all_pdfs.extend(sorted(esd_files)[:1])  # Берем первый ESD
-                print(f"Добавлена пара из папки: {folder_name}")
+                all_pdfs.extend(sorted(gtd_files)[:1])
+                all_pdfs.extend(sorted(esd_files)[:1])
             else:
-                print(f"Пропуск папки {folder_name}: некомплект (GTD: {len(gtd_files)}, ESD: {len(esd_files)})")
+                print_error(f"Папка {folder_name} пропущена: некомплект.")
 
     if not all_pdfs:
-        print("Не найдено пар GTD+ESD.")
+        print_error("Не найдено пар GTD+ESD.")
         return
 
     range_str = generate_range_string(processed_folders)
@@ -195,7 +215,7 @@ def process_gtd_esd(source_path, save_path, valid_folders):
 # ЛОГИКА 3: BindingGTDInvSpec (GTD + Invoice + Spec)
 # ==========================================
 def process_gtd_inv_spec(source_path, save_path, valid_folders):
-    print("\n--- Запуск: Декларации, Инвойсы и Спецификации ---")
+    print("\n[Выполняется: Декларации, Инвойсы и Спецификации]")
 
     def get_gtd_num_from_file(fname):
         parts = re.split(r'[_-]', fname.replace('.pdf', ''))
@@ -203,20 +223,22 @@ def process_gtd_inv_spec(source_path, save_path, valid_folders):
             if part.isdigit(): return int(part)
         return float('inf')
 
-    paired_documents = {}  # Key: GTD number
+    # Список словарей: [{'gtd_num': 123, 'gtd': path, 'inv': path}, ...]
+    valid_pairs = []
     processed_folders_set = set()
 
-    all_folders = sorted(os.listdir(source_path), key=get_folder_number)
+    all_folders = sorted(os.listdir(source_path), key=get_number_from_string)
 
     for folder_name in all_folders:
         folder_path = os.path.join(source_path, folder_name)
         if not os.path.isdir(folder_path): continue
 
-        f_num = get_folder_number(folder_name)
+        f_num = get_number_from_string(folder_name)
         if f_num in valid_folders:
             gtd_path = None
             inv_path = None
 
+            # 1. Сначала сканируем папку на наличие обоих типов файлов
             for file_name in os.listdir(folder_path):
                 lower_name = file_name.lower()
                 if not lower_name.endswith(".pdf"): continue
@@ -226,22 +248,34 @@ def process_gtd_inv_spec(source_path, save_path, valid_folders):
                 elif "invoice" in lower_name:
                     inv_path = os.path.join(folder_path, file_name)
 
-            if gtd_path:
+            # 2. Проверяем комплектность
+            if gtd_path and inv_path:
+                # Комплект полный - добавляем
                 gtd_num = get_gtd_num_from_file(os.path.basename(gtd_path))
-                if gtd_num != float('inf'):
-                    paired_documents[gtd_num] = {'gtd': gtd_path, 'invoice': inv_path}
-                    processed_folders_set.add(f_num)
-                    print(f"Найдено в папке {folder_name}: GTD {gtd_num} + {'Invoice' if inv_path else 'No Invoice'}")
+                valid_pairs.append({
+                    'gtd_num': gtd_num,
+                    'gtd': gtd_path,
+                    'inv': inv_path
+                })
+                processed_folders_set.add(f_num)
+
+            elif gtd_path and not inv_path:
+                print_error(f"Папка {folder_name}: Найден GTD, но нет Invoice! (Пропущено)")
+
+            elif inv_path and not gtd_path:
+                print_error(f"Папка {folder_name}: Найден Invoice, но нет GTD! (Пропущено)")
+
+    if not valid_pairs:
+        print_error("Файлы для скрепления не найдены (или возникли ошибки комплектности).")
+        return
+
+    # Сортируем пары по номеру GTD (как было в оригинальной логике)
+    valid_pairs.sort(key=lambda x: x['gtd_num'])
 
     files_to_merge = []
-    for gtd_num in sorted(paired_documents.keys()):
-        pair = paired_documents[gtd_num]
-        if pair['gtd']: files_to_merge.append(pair['gtd'])
-        if pair['invoice']: files_to_merge.append(pair['invoice'])
-
-    if not files_to_merge:
-        print("Файлы не найдены.")
-        return
+    for pair in valid_pairs:
+        files_to_merge.append(pair['gtd'])
+        files_to_merge.append(pair['inv'])
 
     range_str = generate_range_string(list(processed_folders_set))
     output_name = f"GTD+Inv. + Spec. {range_str} {len(processed_folders_set)} pcs..pdf"
@@ -257,17 +291,17 @@ def process_gtd_inv_spec(source_path, save_path, valid_folders):
 # ЛОГИКА 4: BindingGTD (Только Декларации)
 # ==========================================
 def process_gtd_only(source_path, save_path, valid_folders):
-    print("\n--- Запуск: Только Декларации (GTD) ---")
+    print("\n[Выполняется: Только Декларации (GTD)]")
     processed_folders = []
     all_pdfs = []
 
-    all_folders = sorted(os.listdir(source_path), key=get_folder_number)
+    all_folders = sorted(os.listdir(source_path), key=get_number_from_string)
 
     for folder_name in all_folders:
         folder_path = os.path.join(source_path, folder_name)
         if not os.path.isdir(folder_path): continue
 
-        f_num = get_folder_number(folder_name)
+        f_num = get_number_from_string(folder_name)
         if f_num in valid_folders:
             gtd_files = []
             for file_name in os.listdir(folder_path):
@@ -277,10 +311,9 @@ def process_gtd_only(source_path, save_path, valid_folders):
             if gtd_files:
                 processed_folders.append(f_num)
                 all_pdfs.extend(sorted(gtd_files)[:1])
-                print(f"GTD найден в папке: {folder_name}")
 
     if not all_pdfs:
-        print("GTD файлы не найдены.")
+        print_error("GTD файлы не найдены.")
         return
 
     range_str = generate_range_string(processed_folders)
@@ -294,20 +327,68 @@ def process_gtd_only(source_path, save_path, valid_folders):
 
 
 # ==========================================
-# ЛОГИКА TEMP: BindingTemp (Папка Temp)
+# ЛОГИКА 5: Ж/Д Накладные (Railway)
+# ==========================================
+def process_railway():
+    print("\n[Выполняется: Ж/Д накладные по 4 шт.]")
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    source_folder = os.path.join(script_dir, "Railway")
+    save_folder = os.path.join(script_dir, "Merged Railway")
+
+    if not os.path.exists(source_folder):
+        print_error(f"Папка Railway не найдена по пути: {source_folder}")
+        print("Создайте папку 'Railway' рядом со скриптом.")
+        return
+
+    # Получаем список PDF
+    files = [f for f in os.listdir(source_folder) if f.lower().endswith('.pdf')]
+    if not files:
+        print_error("В папке Railway нет PDF файлов.")
+        return
+
+    # Сортируем по числу в названии
+    files.sort(key=get_number_from_string)
+
+    # Разбиваем на группы по 4
+    chunk_size = 4
+    chunks = [files[i:i + chunk_size] for i in range(0, len(files), chunk_size)]
+
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
+
+    for chunk in chunks:
+        merger = PdfMerger()
+        file_numbers = []
+
+        print(f"Скрепляю ({len(chunk)} шт): {chunk[0]} ... {chunk[-1]}")
+
+        for fname in chunk:
+            full_path = os.path.join(source_folder, fname)
+            merger.append(full_path)
+            file_numbers.append(get_number_from_string(fname))
+
+        range_str = generate_range_string(file_numbers)
+        output_name = f"Railway {range_str} {len(chunk)} pcs..pdf"
+
+        save_merged_pdf(merger, save_folder, output_name)
+
+    print(f"\n✅ Все файлы обработаны. Сохранено в: {save_folder}")
+
+
+# ==========================================
+# ЛОГИКА TEMP (Папка Temp)
 # ==========================================
 def process_temp_folder():
-    print("\n--- Запуск: Скрепление из папки Temp ---")
+    print("\n[Выполняется: Скрепление из папки Temp]")
     script_dir = os.path.dirname(os.path.abspath(__file__))
     temp_folder = os.path.join(script_dir, "Temp")
     combined_folder = os.path.join(script_dir, "Combined")
 
     if not os.path.exists(temp_folder):
-        print(f"❌ Ошибка: Папка Temp не найдена по пути: {temp_folder}")
-        print("Создайте папку 'Temp' рядом со скриптом и положите туда файлы.")
+        print_error("Папка Temp не найдена.")
         return
 
-    # Логика Temp: сортировка по цифре перед запятой (1, ... или 10, ...)
     def extract_temp_number(filename):
         match = re.match(r"^(\d+),", filename)
         return int(match.group(1)) if match else float('inf')
@@ -316,16 +397,13 @@ def process_temp_folder():
     sorted_pdfs = sorted(pdf_files, key=extract_temp_number)
 
     if not sorted_pdfs:
-        print("В папке Temp нет PDF файлов.")
+        print_error("В папке Temp нет PDF файлов.")
         return
 
     merger = PdfMerger()
-    print("Объединяю файлы:")
     for pdf in sorted_pdfs:
-        print(f"-> {pdf}")
         merger.append(os.path.join(temp_folder, pdf))
 
-    # Генерация имени Combined-X.pdf
     if not os.path.exists(combined_folder): os.makedirs(combined_folder)
 
     existing = [f for f in os.listdir(combined_folder) if f.startswith("Combined") and f.endswith(".pdf")]
@@ -342,75 +420,158 @@ def process_temp_folder():
 
 
 # ==========================================
-# ГЛАВНОЕ МЕНЮ
+# МЕНЮ (STATE MACHINE)
 # ==========================================
+
 def main():
     while True:
-        print("\n" + "=" * 40)
-        print("   УТИЛИТА СКРЕПЛЕНИЯ ДОКУМЕНТОВ")
-        print("=" * 40)
+        # --- ГЛАВНОЕ МЕНЮ ---
+        print("\n" + "=" * 45)
+        print(f"   {BOLD}УТИЛИТА СКРЕПЛЕНИЯ ДОКУМЕНТОВ{RESET}")
+        print("=" * 45)
         print("Выберите документы для скрепления:")
         print("1. Отгрузочные документы (GTD, Invoice, ESD)")
         print("2. Документы из папки Temp")
+        print("3. Ж/Д накладные из папки Railway")
         print("0. Выход")
 
-        choice = input("\nВаш выбор: ").strip()
+        main_choice = input(f"\n{BOLD}Ваш выбор:{RESET} ").strip()
 
-        if choice == '0':
+        if main_choice == '0':
             print("Выход из программы.")
             break
 
-        elif choice == '2':
+        elif main_choice == '2':
             process_temp_folder()
-            input("\nНажмите Enter, чтобы вернуться в меню...")
 
-        elif choice == '1':
-            # Шаг 1: Исходная папка
-            source_path = get_clean_path("\nУкажите путь к директории с папками инвойсов")
-            if not os.path.isdir(source_path):
-                print("❌ Ошибка: Указанная папка не существует.")
+        elif main_choice == '3':
+            process_railway()
+
+        elif main_choice == '1':
+            shipping_docs_workflow()
+
+        else:
+            print_error("Неверный ввод.")
+
+
+def shipping_docs_workflow():
+    """
+    Машина состояний для процесса отгрузочных документов.
+    """
+
+    current_state = 'ASK_SOURCE'
+
+    source_path = ""
+    valid_folders = []
+    save_path = ""
+
+    while True:
+        # ----------------------------------------
+        # ЭТАП 1: Выбор исходной папки
+        # ----------------------------------------
+        if current_state == 'ASK_SOURCE':
+            print("\n🟧 Шаг 1: Исходная директория")
+            print("Введите путь или '0' для возврата в Главное Меню.")
+            user_input = get_clean_path("Путь к папке с инвойсами", allow_menu_codes=True)
+
+            if user_input == '0':
+                return  # Возврат в main()
+
+            if not os.path.isdir(user_input):
+                print_error("Папка не существует. Попробуйте еще раз.")
                 continue
 
-            # Шаг 2: Диапазон
-            range_input = input("Укажите диапазон номеров папок (например: 3550-3553,3560): ").strip()
-            valid_folders = parse_folder_range(range_input)
-            if not valid_folders:
-                print("❌ Не указан корректный диапазон.")
-                continue
-            print(f"Будут обработаны папки: {valid_folders}")
+            source_path = user_input
+            current_state = 'ASK_SAVE_PATH'
 
-            # Шаг 3: Выбор типа скрепления
-            print("\nВыберите тип документов:")
+        # ----------------------------------------
+        # ЭТАП 2: Путь сохранения
+        # ----------------------------------------
+        elif current_state == 'ASK_SAVE_PATH':
+            print("\n🟧 Шаг 2: Место сохранения")
+            print("Введите путь для сохранения готового файла.")
+            print("1. Возврат к выбору исходной директории")
+            print("0. Возврат в главное меню")
+
+            user_input = get_clean_path("Путь сохранения", allow_menu_codes=True)
+
+            if user_input == '0': return
+            if user_input == '1':
+                current_state = 'ASK_SOURCE'
+                continue
+
+            save_path = user_input
+            current_state = 'ASK_RANGE'
+
+        # ----------------------------------------
+        # ЭТАП 3: Выбор диапазона
+        # ----------------------------------------
+        elif current_state == 'ASK_RANGE':
+            print("\n🟧 Шаг 3: Диапазон папок")
+            print("Введите диапазон (например: 3550-3553,3560)")
+            print("1. Возврат к выбору места сохранения")
+            print("0. Возврат в главное меню")
+
+            user_input = input(f"{BOLD}Диапазон или команда:{RESET} ").strip()
+
+            if user_input == '0': return
+            if user_input == '1':
+                current_state = 'ASK_SAVE_PATH'
+                continue
+
+            folders = parse_folder_range(user_input)
+            if not folders:
+                print_error("Некорректный диапазон.")
+                continue
+
+            print(f"✔ Будут обработаны папки: {folders}")
+            valid_folders = folders
+            current_state = 'SELECT_TYPE'
+
+        # ----------------------------------------
+        # ЭТАП 4: Выбор типа скрепления
+        # ----------------------------------------
+        elif current_state == 'SELECT_TYPE':
+            print("\n🟧 Шаг 4: Выбор типа скрепления")
+            print(f"Источник: ...{source_path[-20:] if len(source_path) > 20 else source_path}")
+            print(f"Сохранение в: ...{save_path[-20:] if len(save_path) > 20 else save_path}")
+            print("-" * 30)
             print("1. Инвойсы и Спецификации")
             print("2. Декларации и ЭСД")
             print("3. Декларации, Инвойсы и Спецификации")
             print("4. Декларации (Только GTD)")
+            print("-" * 30)
+            print("6. Возврат к выбору диапазона номеров")
+            print("7. Возврат к выбору исходной директории")
+            print("0. Возврат в главное меню")
 
-            sub_choice = input("Ваш выбор: ").strip()
+            choice = input(f"\n{BOLD}Ваш выбор:{RESET} ").strip()
 
-            # Шаг 4: Путь сохранения
-            save_path = get_clean_path("Укажите путь для сохранения скрепленного файла")
+            # Навигация
+            if choice == '0': return
+            if choice == '6':
+                current_state = 'ASK_RANGE'
+                continue
+            if choice == '7':
+                current_state = 'ASK_SOURCE'
+                continue
 
-            # Запуск соответствующей логики
-            if sub_choice == '1':
+            # Действия
+            if choice == '1':
                 process_inv_spec(source_path, save_path, valid_folders)
-            elif sub_choice == '2':
+            elif choice == '2':
                 process_gtd_esd(source_path, save_path, valid_folders)
-            elif sub_choice == '3':
+            elif choice == '3':
                 process_gtd_inv_spec(source_path, save_path, valid_folders)
-            elif sub_choice == '4':
+            elif choice == '4':
                 process_gtd_only(source_path, save_path, valid_folders)
             else:
-                print("Неверный выбор типа документов.")
-
-            input("\nГотово. Нажмите Enter, чтобы вернуться в меню...")
-
-        else:
-            print("Неверный ввод, попробуйте еще раз.")
+                print_error("Неверный выбор.")
+                time.sleep(1)
 
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\nПрограмма остановлена пользователем.")
+        print("\nПрограмма остановлена.")
