@@ -15,5 +15,5 @@
 - Ж/Д накладные: скрепление ЖДн по 4 шт. в порядке возрастания числа в названии файла
 
 
-https://github.com/user-attachments/assets/8832e6ae-018f-4339-b2c1-8d860b241c70
+https://github.com/user-attachments/assets/a719c48a-b444-4f0e-bb2a-9a2f724bc410
 
