@@ -2,15 +2,19 @@ import os
 import re
 import sys
 import time
+import json  # Добавили для работы с настройками
 from PyPDF2 import PdfMerger
 
 # ==========================================
-# КОНСТАНТЫ ОФОРМЛЕНИЯ
+# КОНСТАНТЫ ОФОРМЛЕНИЯ И НАСТРОЕК
 # ==========================================
-# ANSI коды для форматирования текста в консоли
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
+# Определяем путь к папке, где лежит сам скрипт
+script_dir = os.path.dirname(os.path.abspath(__file__))
+# Полный путь к конфигу (чтобы он создавался рядом со скриптом)
+CONFIG_FILE = os.path.join(script_dir, "config.json")
 
 # ==========================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (Утилиты)
@@ -21,20 +25,43 @@ def print_error(message):
     print(f"❗️ {message}")
 
 
+def load_config():
+    """Загружает настройки из JSON файла."""
+    if not os.path.exists(CONFIG_FILE):
+        return None
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print_error(f"Ошибка чтения конфига: {e}")
+        return None
+
+
+def save_config(source_path, save_path):
+    """Сохраняет пути в JSON файл."""
+    data = {
+        "source_path": source_path,
+        "save_path": save_path
+    }
+    try:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+        # print(f"{BOLD}✔ Настройки путей сохранены.{RESET}") # Можно раскомментировать для отладки
+    except Exception as e:
+        print_error(f"Не удалось сохранить настройки: {e}")
+
+
 def get_clean_path(prompt_text, allow_menu_codes=False):
     """
     Запрашивает путь.
     Текст запроса (prompt_text) делается жирным.
     """
-    # Делаем текст запроса жирным
     full_prompt = f"{BOLD}{prompt_text}:{RESET} "
     path = input(full_prompt).strip()
 
-    # Если введен код меню и он разрешен, возвращаем его сразу
-    if allow_menu_codes and path in ['0', '1']:
+    if allow_menu_codes and path in ['0', '1', '9']:  # Добавили 9 для сброса
         return path
 
-    # Удаляем кавычки
     if (path.startswith('"') and path.endswith('"')) or (path.startswith("'") and path.endswith("'")):
         path = path[1:-1]
     return path
@@ -148,7 +175,6 @@ def process_inv_spec(source_path, save_path, valid_folders):
         print_error("Файлы Invoice не найдены.")
         return
 
-    # Сортировка по номеру инвойса
     all_invoice_pdfs.sort(key=lambda x: get_invoice_num(os.path.basename(x)))
 
     range_str = generate_range_string(processed_folders)
@@ -223,7 +249,6 @@ def process_gtd_inv_spec(source_path, save_path, valid_folders):
             if part.isdigit(): return int(part)
         return float('inf')
 
-    # Список словарей: [{'gtd_num': 123, 'gtd': path, 'inv': path}, ...]
     valid_pairs = []
     processed_folders_set = set()
 
@@ -238,7 +263,6 @@ def process_gtd_inv_spec(source_path, save_path, valid_folders):
             gtd_path = None
             inv_path = None
 
-            # 1. Сначала сканируем папку на наличие обоих типов файлов
             for file_name in os.listdir(folder_path):
                 lower_name = file_name.lower()
                 if not lower_name.endswith(".pdf"): continue
@@ -248,9 +272,7 @@ def process_gtd_inv_spec(source_path, save_path, valid_folders):
                 elif "invoice" in lower_name:
                     inv_path = os.path.join(folder_path, file_name)
 
-            # 2. Проверяем комплектность
             if gtd_path and inv_path:
-                # Комплект полный - добавляем
                 gtd_num = get_gtd_num_from_file(os.path.basename(gtd_path))
                 valid_pairs.append({
                     'gtd_num': gtd_num,
@@ -269,7 +291,6 @@ def process_gtd_inv_spec(source_path, save_path, valid_folders):
         print_error("Файлы для скрепления не найдены (или возникли ошибки комплектности).")
         return
 
-    # Сортируем пары по номеру GTD (как было в оригинальной логике)
     valid_pairs.sort(key=lambda x: x['gtd_num'])
 
     files_to_merge = []
@@ -341,16 +362,13 @@ def process_railway():
         print("Создайте папку 'Railway' рядом со скриптом.")
         return
 
-    # Получаем список PDF
     files = [f for f in os.listdir(source_folder) if f.lower().endswith('.pdf')]
     if not files:
         print_error("В папке Railway нет PDF файлов.")
         return
 
-    # Сортируем по числу в названии
     files.sort(key=get_number_from_string)
 
-    # Разбиваем на группы по 4
     chunk_size = 4
     chunks = [files[i:i + chunk_size] for i in range(0, len(files), chunk_size)]
 
@@ -459,11 +477,33 @@ def shipping_docs_workflow():
     Машина состояний для процесса отгрузочных документов.
     """
 
-    current_state = 'ASK_SOURCE'
-
+    # ----------------------------------------
+    # ИНИЦИАЛИЗАЦИЯ: Проверка сохраненных путей
+    # ----------------------------------------
     source_path = ""
-    valid_folders = []
     save_path = ""
+    valid_folders = []
+
+    config = load_config()
+    loaded_from_config = False
+
+    if config:
+        cfg_source = config.get("source_path", "")
+        cfg_save = config.get("save_path", "")
+
+        # Проверяем, существуют ли сохраненные папки
+        if os.path.isdir(cfg_source) and os.path.isdir(cfg_save):
+            source_path = cfg_source
+            save_path = cfg_save
+            loaded_from_config = True
+            current_state = 'ASK_RANGE'  # Сразу переходим к диапазону
+            print(f"\nℹ️  {BOLD}Используются сохраненные пути:{RESET}")
+            print(f"   📁 Откуда: {source_path}")
+            print(f"   💾 Куда:   {save_path}")
+        else:
+            current_state = 'ASK_SOURCE'
+    else:
+        current_state = 'ASK_SOURCE'
 
     while True:
         # ----------------------------------------
@@ -501,6 +541,11 @@ def shipping_docs_workflow():
                 continue
 
             save_path = user_input
+
+            # Если оба пути валидны, сохраняем конфиг
+            if os.path.isdir(source_path) and os.path.isdir(save_path):
+                save_config(source_path, save_path)
+
             current_state = 'ASK_RANGE'
 
         # ----------------------------------------
@@ -509,7 +554,8 @@ def shipping_docs_workflow():
         elif current_state == 'ASK_RANGE':
             print("\n🟧 Шаг 3: Диапазон папок")
             print("Введите диапазон (например: 3550-3553,3560)")
-            print("1. Возврат к выбору места сохранения")
+            print("1. Изменить путь сохранения (Назад)")
+            print("9. Сбросить все пути и выбрать папку заново")
             print("0. Возврат в главное меню")
 
             user_input = input(f"{BOLD}Диапазон или команда:{RESET} ").strip()
@@ -517,6 +563,9 @@ def shipping_docs_workflow():
             if user_input == '0': return
             if user_input == '1':
                 current_state = 'ASK_SAVE_PATH'
+                continue
+            if user_input == '9':
+                current_state = 'ASK_SOURCE'
                 continue
 
             folders = parse_folder_range(user_input)
@@ -533,8 +582,13 @@ def shipping_docs_workflow():
         # ----------------------------------------
         elif current_state == 'SELECT_TYPE':
             print("\n🟧 Шаг 4: Выбор типа скрепления")
-            print(f"Источник: ...{source_path[-20:] if len(source_path) > 20 else source_path}")
-            print(f"Сохранение в: ...{save_path[-20:] if len(save_path) > 20 else save_path}")
+
+            # Показываем короткие версии путей для наглядности
+            short_source = source_path[-30:] if len(source_path) > 30 else source_path
+            short_save = save_path[-30:] if len(save_path) > 30 else save_path
+
+            print(f"Источник: ...{short_source}")
+            print(f"Сохранение в: ...{short_save}")
             print("-" * 30)
             print("1. Инвойсы и Спецификации")
             print("2. Декларации и ЭСД")
@@ -542,7 +596,7 @@ def shipping_docs_workflow():
             print("4. Декларации (Только GTD)")
             print("-" * 30)
             print("6. Возврат к выбору диапазона номеров")
-            print("7. Возврат к выбору исходной директории")
+            print("7. Изменить пути (возврат к выбору папки)")
             print("0. Возврат в главное меню")
 
             choice = input(f"\n{BOLD}Ваш выбор:{RESET} ").strip()
